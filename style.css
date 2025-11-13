@@ -118,6 +118,13 @@ body {
   animation: fadeIn 0.3s ease-in;
 }
 
+.agent-suffix {
+  color: #004080;        /* Azul mais escuro */
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -160,6 +167,23 @@ body {
   justify-content: center;
 }
 
+
+.marcar-conferido, .desmarcar-conferido {
+  border-radius: 50%;
+  padding: 5px 7px;
+  line-height: 1;
+  transition: 0.2s;
+}
+.marcar-conferido:hover {
+  background-color: #16a34a;
+  color: white;
+}
+.desmarcar-conferido:hover {
+  background-color: #dc2626;
+  color: white;
+}
+
+
 .circle-inner {
   position: absolute;
   width: 34px;
@@ -187,4 +211,24 @@ footer {
 
 .btn + .btn {
   margin-left: 5px;
+}
+
+
+.bank-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.badge-bb {
+  background: #facc15; /* amarelo */
+  color: black;
+}
+
+.badge-c6 {
+  background: black;
+  color: white;
 }

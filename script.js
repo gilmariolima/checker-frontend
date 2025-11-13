@@ -10,6 +10,15 @@ function formatCurrency(v) {
   }
 }
 
+
+function badgeBanco(b) {
+  if (!b) return "";
+  b = b.toUpperCase();
+  if (b.includes("BB")) return `<span class="bank-badge badge-bb">BB</span>`;
+  if (b.includes("C6")) return `<span class="bank-badge badge-c6">C6</span>`;
+  return "";
+}
+
 let bancoDetectado = '';
 
 document.getElementById('btnConferir').addEventListener('click', async () => {
@@ -24,12 +33,28 @@ document.getElementById('btnConferir').addEventListener('click', async () => {
   document.getElementById('progressArea').style.display = 'block';
 
   const fd = new FormData();
-  fd.append('pdf', pdf);
-  for (let i = 0; i < excels.length; i++) fd.append('excels', excels[i]);
-  fd.append('data', dataFiltro);
+
+  // 🟢 ENVIAR TODOS OS PDFs (mesmo que seja só 1)
+  const pdfFiles = document.getElementById('pdfFile').files;
+  for (let i = 0; i < pdfFiles.length; i++) {
+    fd.append('pdfs', pdfFiles[i]);  // <-- NOME CORRETO
+  }
+  
+  // 🟢 ENVIAR TODOS OS EXCELS
+  for (let i = 0; i < excels.length; i++) {
+    fd.append('excels', excels[i]);  // <-- JÁ ESTAVA CERTO
+  }
+  
+  // 🟡 DATA
+  fd.append('data', dataFiltro || '');
+
 
   try {
-    const resp = await fetch('http://127.0.0.1:8000/conferir_caixa', { method: 'POST', body: fd });
+    const backendURL = window.location.origin; // Detecta o domínio atual (Render)
+    const resp = await fetch(`${window.location.origin}/conferir_caixa`, {
+      method: 'POST',
+      body: fd
+    });
     const dados = await resp.json();
     document.getElementById('progressArea').style.display = 'none';
 
@@ -81,61 +106,543 @@ document.getElementById('btnConferir').addEventListener('click', async () => {
         <div class='agent-card'>
           <div class='agent-header' onclick='toggleAgent("${id}")'>
             <div>
-              <span class='agent-name'><i class='bi bi-person-circle'></i> ${agente}</span><br>
+              <span class='agent-name'>
+                <i class='bi bi-person-circle'></i>
+                ${(() => {
+                  // separa sufixos conhecidos e colore
+                  const match = agente.match(/^(.*?)(?:\s*-\s*|\s+)(SUPORTE\s+ONLINE|VALE\s+VIAGENS|TOP\s+VIAGENS|AG[ÊE]NCIA|VALE\s+AG[ÊE]NCIA)$/i);
+                  if (match) {
+                    const nomeBase = match[1].trim();
+                    const sufixo = match[2].trim();
+                    return `${nomeBase} <span class='agent-suffix'>- ${sufixo}</span>`;
+                  }
+                  return agente;
+                })()}
+              </span><br>
+
               <span class='agent-meta'>Conferidos: ${d.conferidos.length} • Falta PDF: ${d.faltando_pdf.length} • Falta Excel: ${d.faltando_excel.length}</span>
             </div>
             ${circle}
           </div>
           <div class='agent-content' id='${id}'>
             <div class='mt-3'>
-              <div class='fw-bold text-success mb-2'>✅ Conferidos (${d.conferidos.length})</div>
-              ${d.conferidos.map(x => `
-                <div class='entry ok'>
-                  <div class="fw-bold text-success mb-1">${x.nome_excel || x.nome}</div>
-                  <div class="mt-1 ps-1">
-                    <div><i class="bi bi-file-earmark-excel text-success me-1"></i>
-                      <small><strong>Excel:</strong> ${x.nome_excel || '-'} — ${formatCurrency(x.valor_excel)} • ${x.hora_excel || '(sem hora)'}</small>
-                    </div>
-                    <div><i class="bi bi-file-earmark-pdf text-danger me-1"></i>
-                      <small><strong>PDF:</strong> ${x.nome_pdf || '-'} — ${formatCurrency(x.valor_pdf)} • ${x.hora_pdf || '(sem hora)'}</small>
-                    </div>
-                  </div>
-                </div>`).join('')}
 
-              <div class='fw-bold text-warning mt-3 mb-2'>⚠️ Faltando no PDF (${d.faltando_pdf.length})</div>
-              ${d.faltando_pdf.map(x => `
-                <div class='entry warn'>
-                  <strong>${x.nome}</strong>
-                  <div class="mt-1">
-                    <div><i class="bi bi-file-earmark-excel text-success"></i>
-                      <small><strong>Excel:</strong> ${formatCurrency(x.valor_excel ?? x.valor)} • ${x.hora || '(sem hora)'}</small>
-                    </div>
-                    <div><i class="bi bi-file-earmark-pdf text-danger"></i>
-                      <small><strong>PDF:</strong> <em>não encontrado</em></small>
-                    </div>
-                  </div>
-                  <div class="text-muted mt-1"><small>💬 ${x.motivo || 'Sem motivo registrado.'}</small></div>
-                </div>`).join('')}
+              <!-- ================= CONFIRMADOS ================= -->
+              <div class='fw-bold text-success mb-2 conferidos-titulo'>
+                ✅ Conferidos (${d.conferidos.length}) — 
+                Total: <span class='total-conferidos'>
+                  ${formatCurrency(
+                    d.conferidos.reduce((acc, x) => acc + (x.valor_excel || x.valor_pdf || 0), 0)
+                  )}
+                </span>
+              </div>
 
-              <div class='fw-bold text-danger mt-3 mb-2'>❌ Faltando no Excel (${d.faltando_excel.length})</div>
-              ${d.faltando_excel.map(x => `
-                <div class='entry err'>
-                  <strong>${x.nome}</strong>
-                  <div class="mt-1">
-                    <div><i class="bi bi-file-earmark-excel text-success"></i>
-                      <small><strong>Excel:</strong> <em>não encontrado</em></small>
+              ${d.conferidos
+                .map(
+                  (x, idx) => `
+              <div class='entry ok' id='conferido_${id}_${idx}'>
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-bold text-success mb-1">
+                      ${badgeBanco(x.banco_pdf || x.banco)}
+                      ${x.nome_excel || x.nome}
                     </div>
-                    <div><i class="bi bi-file-earmark-pdf text-danger"></i>
-                      <small><strong>PDF:</strong> ${formatCurrency(x.valor)} • ${x.hora || '(sem hora)'}</small>
+
+                    <div class="mt-1 ps-1">
+                      <div>
+                        <i class="bi bi-file-earmark-excel text-success me-1"></i>
+                        <small><strong>Excel:</strong> ${x.nome_excel} — ${formatCurrency(x.valor_excel)} • ${x.hora_excel}</small>
+                      </div>
+
+                      <div>
+                        <i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                        <small><strong>PDF:</strong> ${badgeBanco(x.banco_pdf)} ${x.nome_pdf} — ${formatCurrency(x.valor_pdf)} • ${x.hora_pdf}</small>
+                      </div>
                     </div>
                   </div>
-                </div>`).join('')}
+
+                  <button class="btn btn-sm btn-outline-danger desmarcar-conferido"
+                        data-agente="${agente}"
+                        data-nome="${x.nome_excel || x.nome}"
+                        data-valor="${x.valor_excel || x.valor_pdf}"
+                        data-hora="${x.hora_excel || x.hora_pdf}"
+                        data-banco="${x.banco_pdf || x.banco || ''}">
+                  <i class="bi bi-x-circle"></i>
+                </button>
+
+                </div>
+              </div>`
+                )
+                .join("")}
+
+
+              <!-- ================= FALTANDO NO PDF ================= -->
+              <!-- ================= FALTANDO NO PDF ================= -->
+              <div class='fw-bold text-warning mt-3 mb-2'>
+                ⚠️ Faltando no PDF (${d.faltando_pdf.length})
+              </div>
+
+              ${d.faltando_pdf
+                .map(
+                  (x, idx) => `
+              <div class='entry warn' id='faltando_${id}_${idx}'>
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-bold text-warning mb-1">
+                      ${badgeBanco(x.banco || x.banco_pdf || x.banco_possivel)}
+                      ${x.nome}
+                    </div>
+
+                    <div class="mt-1 ps-1">
+                      <div>
+                        <i class="bi bi-file-earmark-excel text-success me-1"></i>
+                        <small><strong>Excel:</strong> ${x.nome} — ${formatCurrency(x.valor_excel ?? x.valor)} • ${x.hora}</small>
+                      </div>
+
+                      <div>
+                        <i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                        <small><strong>PDF:</strong> <em>não encontrado</em></small>
+                      </div>
+                    </div>
+
+                    ${x.motivo ? `
+                    <div class="text-muted mt-1">
+                      <small>💬 ${x.motivo}</small>
+                    </div>` : ''}
+                  </div>
+
+                  <button class="btn btn-sm btn-outline-success marcar-conferido"
+                    data-agente="${agente}"
+                    data-nome="${x.nome}"
+                    data-valor="${x.valor_excel ?? x.valor}"
+                    data-hora="${x.hora}"
+                    data-banco="${x.banco || x.banco_pdf || x.banco_possivel || ''}">
+                    <i class="bi bi-check-circle"></i>
+                  </button>
+                </div>
+              </div>`
+                )
+                .join("")}
+
+
+
+
+              <!-- ================= FALTANDO NO EXCEL ================= -->
+              <div class='fw-bold text-danger mt-3 mb-2'>
+                ❌ Faltando no Excel (${d.faltando_excel.length})
+              </div>
+
+              ${d.faltando_excel
+                .map(
+                  (x) => `
+              <div class='entry err'>
+                <strong>
+                  ${badgeBanco(x.banco)}
+                  ${x.nome}
+                </strong>
+
+                <div class="mt-1">
+                  <div>
+                    <i class="bi bi-file-earmark-excel text-success"></i>
+                    <small><strong>Excel:</strong> <em>não encontrado</em></small>
+                  </div>
+
+                  <div>
+                    <i class="bi bi-file-earmark-pdf text-danger"></i>
+                    <small>
+                      <strong>PDF:</strong> ${formatCurrency(x.valor)} • ${x.hora}
+                    </small>
+                  </div>
+                </div>
+              </div>`
+                )
+                .join("")}
             </div>
           </div>
         </div>`;
     });
 
+    
+
+
     resEl.innerHTML = html;
+
+    // 🔧 Ajuste visual para o agente "Sem Agente"
+    document.querySelectorAll('.agent-card').forEach(card => {
+      const agentName = card.querySelector('.agent-name')?.textContent.trim().toLowerCase() || '';
+
+      if (agentName !== 'sem agente') {
+        card.querySelectorAll('.fw-bold.text-danger, .entry.err').forEach(el => el.remove());
+      } else {
+        // Remove tudo que é de conferidos ou faltando PDF
+        card.querySelectorAll('.fw-bold.text-success, .entry.ok, .fw-bold.text-warning, .entry.warn').forEach(el => el.remove());
+
+        // Remove o título vermelho padrão "Faltando no Excel (X)"
+        card.querySelectorAll('.fw-bold.text-danger').forEach(el => el.remove());
+        card.querySelectorAll('.entry.err .titulo').forEach(el => el.remove());
+
+        const faltandoExcelCount = card.querySelectorAll('.entry.err').length;
+
+        const header = card.querySelector('.agent-header');
+        if (header) {
+          header.innerHTML = `
+            <div class="fw-bold" style="color:#a31515; font-size:1.1rem;">
+              ❌ FALTANDO EXCEL : ${faltandoExcelCount}
+            </div>
+          `;
+        }
+
+  const meta = card.querySelector('.agent-meta');
+  if (meta) meta.remove();
+}
+
+
+    });
+
+
+
+
+   // 🟢 Marcar item como conferido
+    document.querySelectorAll('.marcar-conferido').forEach(btn => {
+      btn.addEventListener('click', () => {
+        moverItem(btn, 'faltando', 'conferido');
+      });
+    });
+
+    // 🔴 Desmarcar item (voltar para faltando no PDF)
+    document.querySelectorAll('.desmarcar-conferido').forEach(btn => {
+      btn.addEventListener('click', () => {
+        moverItem(btn, 'conferido', 'faltando');
+      });
+    });
+
+
+
+    // Recalcula contadores, soma total dos "conferidos" e atualiza o círculo de progresso
+    function recalcAndRenderAgent(agenteId) {
+      try {
+        // agenteId exemplo: "GILMARIO_LIMA" — corresponde ao id do .agent-content
+        const agentContent = document.getElementById(agenteId);
+        if (!agentContent) return;
+
+        const agentCard = agentContent.closest('.agent-card');
+        if (!agentCard) return;
+
+        // contar entradas
+        const conferidosEls = agentCard.querySelectorAll('.entry.ok');
+        const faltandoEls = agentCard.querySelectorAll('.entry.warn');
+        const faltaExcelEls = agentCard.querySelectorAll('.entry.err');
+
+        const conferidosCount = conferidosEls.length;
+        const faltandoCount = faltandoEls.length;
+        const faltaExcelCount = faltaExcelEls.length;
+
+        // somar valores dos conferidos: tenta extrair R$ XX,XX do texto de cada entry.ok
+        let totalValor = 0;
+        conferidosEls.forEach(el => {
+          // procura primeiro "R$ x.xxx,xx" no texto do elemento
+          const txt = el.innerText || '';
+          const m = txt.match(/R\$[\s]*([\d\.\,]+)/);
+          if (m && m[1]) {
+            const numStr = m[1].trim().replace(/\./g, '').replace(',', '.'); // 1.234,56 -> 1234.56
+            const n = parseFloat(numStr) || 0;
+            totalValor += n;
+          } else {
+            // fallback: checa atributo data-valor se existir
+            const dv = el.dataset && el.dataset.valor;
+            if (dv) totalValor += parseFloat(dv) || 0;
+          }
+        });
+
+        // atualizar meta (linha pequena abaixo do nome do agente)
+        const metaEl = agentCard.querySelector('.agent-meta');
+        if (metaEl) {
+          metaEl.textContent = `Conferidos: ${conferidosCount} • Falta PDF: ${faltandoCount} • Falta Excel: ${faltaExcelCount}`;
+        }
+
+        // atualizar título de conferidos e total
+        const confTituloEl = agentCard.querySelector('.conferidos-titulo');
+        if (confTituloEl) {
+          const totalFormatted = formatCurrency(totalValor);
+          confTituloEl.innerHTML = `✅ Conferidos (${conferidosCount}) — Total: <span class='total-conferidos'>${totalFormatted}</span>`;
+        }
+
+        // atualizar contador amarelo (faltando)
+        const faltTituloEl = agentCard.querySelector('.fw-bold.text-warning');
+        if (faltTituloEl) {
+          faltTituloEl.innerHTML = `⚠️ Faltando no PDF (${faltandoCount})`;
+        }
+
+        // atualizar círculo de progresso (percentual)
+        const totalItens = Math.max(1, conferidosCount + faltandoCount + faltaExcelCount);
+        const perc = Math.round((conferidosCount / totalItens) * 100);
+
+        // pega o segundo circle (o visível) e o .circle-inner
+        const circles = agentCard.querySelectorAll('.progress-ring circle');
+        const circle = circles.length > 1 ? circles[1] : circles[0];
+        const inner = agentCard.querySelector('.circle-inner');
+
+        if (circle && inner) {
+          const r = parseFloat(circle.getAttribute('r')) || 16;
+          const circ = 2 * Math.PI * r;
+          const offset = ((1 - perc / 100) * circ).toFixed(2);
+          circle.style.transition = 'stroke-dashoffset 0.3s ease, stroke 0.3s ease';
+          circle.setAttribute('stroke-dashoffset', offset);
+          circle.setAttribute('stroke', perc === 100 ? '#16a34a' : '#0a66c2');
+          inner.textContent = `${perc}%`;
+        }
+      } catch (err) {
+        console.warn('recalcAndRenderAgent erro:', err);
+      }
+    }
+
+    function calcularSimilaridade(a, b) {
+      if (!a || !b) return 0;
+      a = a.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      b = b.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matches = a.split("").filter(c => b.includes(c)).length;
+      return matches / Math.max(a.length, b.length);
+    }
+
+    // 🔄 Função geral para mover itens entre listas (com limpeza automática no "Faltando Excel")
+    function moverItem(btn, origem, destino) {
+      const nome = btn.dataset.nome?.trim() || "";
+      const valor = parseFloat(btn.dataset.valor || 0);
+      const hora = btn.dataset.hora || "(sem hora)";
+      const agente = btn.dataset.agente;
+      const banco = btn.dataset.banco || "";
+      const agenteId = agente.replace(/\s+/g, "_");
+
+      // Captura motivo antes de remover
+      const card = btn.closest(`.entry.${origem === "conferido" ? "ok" : "warn"}`);
+      let motivoRaw = "";
+      if (card) {
+        motivoRaw = card.querySelector(".text-muted small")?.textContent || "";
+        card.remove();
+      }
+
+      const meta = document.querySelector(`#${agenteId} .agent-meta`);
+      const confTitulo = document.querySelector(`#${agenteId} .conferidos-titulo`);
+      const totalSpan = confTitulo?.querySelector(".total-conferidos");
+      const confCountMatch = confTitulo?.textContent.match(/Conferidos\s*\((\d+)\)/);
+      const confCount = confCountMatch ? parseInt(confCountMatch[1]) : 0;
+      const totalValor = parseFloat(totalSpan?.textContent.replace(/[^\d,.-]/g, "").replace(",", ".") || 0);
+      const faltandoTitulo = document.querySelector(`#${agenteId} .fw-bold.text-warning`);
+      const faltandoMatch = faltandoTitulo?.textContent.match(/\((\d+)\)/);
+      const faltandoCount = faltandoMatch ? parseInt(faltandoMatch[1]) : 0;
+
+      // =====================================================
+      // 🟢 DESTINO = CONFIRMAR → Mover de Faltando PDF → Conferido
+      // =====================================================
+      if (destino === "conferido") {
+        let detalheManual = "confirmado manualmente";
+
+        let motivo = motivoRaw;
+        let mNome = motivo.match(/'([^']+)'/); // 👈 Nome dentro das aspas
+        let mValor = motivo.match(/R\$[\s]*([\d\.,]+)/); // 👈 Valor dentro do motivo
+
+        if (mNome && mValor) {
+          detalheManual = `confirmado manualmente (baseado em ${mNome[1]} — R$${mValor[1]})`;
+        }
+
+        const confContainer = document.querySelector(`#${agenteId} .fw-bold.text-success`);
+        if (confContainer) {
+          const novo = document.createElement("div");
+          novo.className = "entry ok";
+          novo.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-bold text-success mb-1">
+                  ${badgeBanco(banco)} ${nome}
+                </div>
+                <div class="mt-1 ps-1">
+                  <div>
+                    <i class="bi bi-file-earmark-excel text-success me-1"></i>
+                    <small><strong>Excel:</strong> ${nome} — ${formatCurrency(valor)} • ${hora}</small>
+                  </div>
+                  <div>
+                    <i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                    <small><strong>PDF:</strong> <em>${detalheManual}</em></small>
+                  </div>
+                </div>
+              </div>
+              <button class="btn btn-sm btn-outline-danger desmarcar-conferido"
+                      data-agente="${agente}"
+                      data-nome="${nome}"
+                      data-valor="${valor}"
+                      data-hora="${hora}"
+                      data-banco="${banco}">
+                <i class="bi bi-x-circle"></i>
+              </button>
+            </div>`;
+          confContainer.insertAdjacentElement("afterend", novo);
+          novo.querySelector(".desmarcar-conferido").addEventListener("click", () =>
+            moverItem(novo.querySelector(".desmarcar-conferido"), "conferido", "faltando")
+          );
+
+          atualizarContadores(meta, confTitulo, faltandoTitulo, confCount + 1, faltandoCount - 1, valor, totalValor);
+        }
+
+        // =====================================================
+        // 🔥 BLOCO FINAL → Remover item da lista "Faltando Excel"
+        // =====================================================
+        const nomeSugerido = mNome ? mNome[1].trim().toLowerCase() : "";
+        const valorSugerido = mValor
+          ? parseFloat(mValor[1].replace(/\./g, "").replace(",", "."))
+          : null;
+
+        const normalize = s =>
+          (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // 🟢 Procurar o card "FALTANDO EXCEL" (ou agente "Sem Agente")
+        const semAgenteCard = Array.from(document.querySelectorAll(".agent-card")).find(card => {
+          const header = card.querySelector(".agent-header");
+          const headerText = header?.innerText.toUpperCase() || "";
+          const agentName = card.querySelector(".agent-name")?.innerText.toUpperCase() || "";
+          return headerText.includes("FALTANDO EXCEL") || agentName.includes("SEM AGENTE");
+        });
+
+        if (semAgenteCard) {
+          const itensErr = semAgenteCard.querySelectorAll(".entry.err");
+          let removidos = 0;
+
+          itensErr.forEach(el => {
+            const nomeErr = normalize(el.querySelector("strong")?.textContent || "");
+            const valMatch = el.innerText.match(/R\$[\s]*([\d\.,]+)/);
+            const valorErr = valMatch ? parseFloat(valMatch[1].replace(/\./g, "").replace(",", ".")) : null;
+
+            const matchNome = nomeSugerido && nomeErr.includes(normalize(nomeSugerido));
+            const matchValor =
+              valorSugerido != null && valorErr != null
+                ? Math.abs(valorErr - valorSugerido) < 0.05
+                : true;
+
+            if (matchNome && matchValor) {
+              // 🔸 animação suave
+              el.style.transition = "opacity 0.4s ease-out, transform 0.4s ease-out";
+              el.style.opacity = "0";
+              el.style.transform = "translateX(-20px)";
+              setTimeout(() => el.remove(), 400);
+              removidos++;
+            }
+          });
+
+          if (removidos > 0) {
+            setTimeout(() => {
+              const novoCount = semAgenteCard.querySelectorAll(".entry.err").length;
+              const header = semAgenteCard.querySelector(".agent-header div");
+              if (header) header.innerHTML = `❌ FALTANDO EXCEL : ${novoCount}`;
+              document.getElementById("totalFaltaExcel").textContent = novoCount;
+            }, 450);
+          }
+        }
+
+        recalcAndRenderAgent(agenteId);
+        return;
+      }
+
+      // =====================================================
+      // 🔴 DESTINO = VOLTAR → Conferido → Faltando PDF
+      // =====================================================
+      const faltContainer = document.querySelector(`#${agenteId} .fw-bold.text-warning`);
+      if (faltContainer) {
+        const novo = document.createElement("div");
+        novo.className = "entry warn";
+        novo.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="fw-bold text-warning mb-1">
+                ${badgeBanco(banco)} ${nome}
+              </div>
+              <div class="mt-1 ps-1">
+                <div><i class="bi bi-file-earmark-excel text-success me-1"></i>
+                  <small><strong>Excel:</strong> ${nome} — ${formatCurrency(valor)} • ${hora}</small>
+                </div>
+                <div><i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                  <small><strong>PDF:</strong> <em>não encontrado</em></small>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-success marcar-conferido"
+                    data-agente="${agente}"
+                    data-nome="${nome}"
+                    data-valor="${valor}"
+                    data-hora="${hora}"
+                    data-banco="${banco}">
+              <i class="bi bi-check-circle"></i>
+            </button>
+          </div>`;
+        faltContainer.insertAdjacentElement("afterend", novo);
+        novo.querySelector(".marcar-conferido").addEventListener("click", () =>
+          moverItem(novo.querySelector(".marcar-conferido"), "faltando", "conferido")
+        );
+
+        atualizarContadores(meta, confTitulo, faltandoTitulo, confCount - 1, faltandoCount + 1, -valor, totalValor);
+      }
+
+      recalcAndRenderAgent(agenteId);
+    }
+
+
+
+
+    // 🧮 Atualiza contadores e total dinamicamente
+    function atualizarContadores(meta, confTitulo, faltandoTitulo, confCount, faltandoCount, valorDelta, totalAtual) {
+      // Atualiza linha meta
+      const metaText = meta?.textContent;
+      let faltaExcel = 0;
+      if (metaText) {
+        const match = metaText.match(/Conferidos:\s*(\d+)\s*•\s*Falta PDF:\s*(\d+)\s*•\s*Falta Excel:\s*(\d+)/);
+        if (match) {
+          faltaExcel = parseInt(match[3]);
+          meta.textContent = `Conferidos: ${Math.max(0, confCount)} • Falta PDF: ${Math.max(0, faltandoCount)} • Falta Excel: ${faltaExcel}`;
+        }
+      }
+
+      // Atualiza total e contador de conferidos
+      const totalSpan = confTitulo.querySelector('.total-conferidos');
+      const novoTotal = Math.max(0, totalAtual + valorDelta);
+      totalSpan.textContent = formatCurrency(novoTotal);
+      confTitulo.innerHTML = `✅ Conferidos (${Math.max(0, confCount)}) — Total: <span class='total-conferidos'>${formatCurrency(novoTotal)}</span>`;
+
+      // Atualiza contador de faltando no PDF
+      if (faltandoTitulo) {
+        faltandoTitulo.innerHTML = `⚠️ Faltando no PDF (${Math.max(0, faltandoCount)})`;
+      }
+
+      // 🔵 Atualiza círculo de porcentagem
+      try {
+        // usa o ID do agente (vem do meta → sobe pro .agent-content → pega o id)
+        if (!meta) return; // <-- garante que meta existe
+        const agentContent = meta.closest('.agent-content');
+        if (!agentContent) return;
+
+        const agenteId = agentContent.id; // ex: GILMARIO_LIMA
+        const agentCard = document.querySelector(`#${agenteId}`).closest('.agent-card');
+        if (!agentCard) return;
+
+        const total = Math.max(1, confCount + faltandoCount + faltaExcel);
+        const perc = Math.round((confCount / total) * 100);
+
+        const circles = agentCard.querySelectorAll('.progress-ring circle');
+        const circle = circles[circles.length - 1]; // o círculo ativo (segundo)
+        const inner = agentCard.querySelector('.circle-inner');
+
+        if (circle && inner) {
+          const r = 16;
+          const circ = 2 * Math.PI * r;
+          const offset = ((1 - perc / 100) * circ).toFixed(2);
+          circle.style.transition = 'stroke-dashoffset 0.3s ease';
+          circle.setAttribute('stroke-dashoffset', offset);
+          circle.setAttribute('stroke', perc === 100 ? '#16a34a' : '#0a66c2');
+          inner.textContent = `${perc}%`;
+        }
+      } catch (err) {
+        console.warn('Erro ao atualizar círculo:', err);
+      }
+    }
+
+    
   } catch (e) {
     document.getElementById('progressArea').style.display = 'none';
     resEl.innerHTML = `<div class='alert alert-danger'>Erro: ${e.message}</div>`;
@@ -151,27 +658,135 @@ document.getElementById('btnLimpar').addEventListener('click', () => {
   document.getElementById('totalFaltaPdf').textContent = '0';
   document.getElementById('totalFaltaExcel').textContent = '0';
 });
-
-document.getElementById('btnExport').addEventListener('click', () => {
+document.getElementById('btnExport').addEventListener('click', async () => {
   const resultado = document.getElementById('resultado');
-  if (!resultado.innerHTML) return alert('Nada para exportar');
+  if (!resultado.innerHTML.trim()) return alert('Nada para exportar');
 
   const totalC = document.getElementById('totalConferidos').textContent;
   const totalP = document.getElementById('totalFaltaPdf').textContent;
   const totalE = document.getElementById('totalFaltaExcel').textContent;
   const hoje = new Date();
   const dataStr = hoje.toLocaleDateString('pt-BR');
-  const nomeArquivo = `ConferenciaCaixa_${bancoDetectado || 'DESCONHECIDO'}_${hoje.toISOString().split('T')[0]}.pdf`;
+  const nomeBase = `ConferenciaCaixa_${bancoDetectado || 'DESCONHECIDO'}_${hoje.toISOString().split('T')[0]}`;
 
-  const cabecalho = `
-    <div style='text-align:center;margin-bottom:20px;'>
-      <h2 style='color:#0a66c2;margin-bottom:4px;'>📊 Conferência de Caixa</h2>
-      <p style='margin:0;font-size:13px;color:#444;'>Banco: <strong>${bancoDetectado}</strong> • Data: <strong>${dataStr}</strong></p>
-      <p style='margin:4px 0;font-size:13px;color:#555;'>Conferidos: ${totalC} • Falta PDF: ${totalP} • Falta Excel: ${totalE}</p>
-      <hr style='border:none;border-top:1px solid #ccc;margin:10px 0;'>
-    </div>`;
+  // ==========================================================
+  // 📊 GERAR RESUMO POR AGENTE
+  // ==========================================================
+  const agentes = Array.from(document.querySelectorAll('.agent-card'));
+  const dadosResumo = agentes.map(card => {
+    const nome = card.querySelector('.agent-name')?.textContent.trim() || 'Sem Agente';
+    const meta = card.querySelector('.agent-meta')?.textContent || '';
+    const matchC = meta.match(/Conferidos:\s*(\d+)/);
+    const matchP = meta.match(/Falta PDF:\s*(\d+)/);
+    const matchE = meta.match(/Falta Excel:\s*(\d+)/);
+    const conferidos = parseInt(matchC?.[1] || 0);
+    const faltaPdf = parseInt(matchP?.[1] || 0);
+    const faltaExcel = parseInt(matchE?.[1] || 0);
+    const totalSpan = card.querySelector('.total-conferidos');
+    const totalValor = totalSpan ? totalSpan.textContent.trim() : 'R$ 0,00';
+    const perc = card.querySelector('.circle-inner')?.textContent.trim() || '0%';
+    return { nome, conferidos, faltaPdf, faltaExcel, totalValor, perc };
+  });
 
-  const conteudoPDF = cabecalho + resultado.innerHTML;
-  const opt = { margin: 0.5, filename: nomeArquivo, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } };
-  html2pdf().set(opt).from(conteudoPDF).save();
+  const linhas = dadosResumo.map(a => `
+    <tr>
+      <td>${a.nome}</td>
+      <td style="text-align:center;">${a.conferidos}</td>
+      <td style="text-align:center;">${a.faltaPdf}</td>
+      <td style="text-align:center;">${a.faltaExcel}</td>
+      <td style="text-align:right;">${a.totalValor}</td>
+      <td style="text-align:center;">${a.perc}</td>
+    </tr>`).join('');
+
+  const resumoHTML = `
+    <div style="text-align:center; margin-bottom:10px;">
+      <h2 style="color:#0a66c2; margin:0;">📊 Resumo de Conferência de Caixa</h2>
+      <p style="margin:2px 0; font-size:12px;">Banco: <strong>${bancoDetectado}</strong> • Data: <strong>${dataStr}</strong></p>
+      <p style="margin:2px 0; font-size:12px;">
+        ✅ Conferidos: ${totalC} • ⚠️ Falta PDF: ${totalP} • ❌ Falta Excel: ${totalE}
+      </p>
+      <hr>
+    </div>
+    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+      <thead>
+        <tr style="background:#0a66c2; color:#fff;">
+          <th>Agente</th><th>Conferidos</th><th>Falta PDF</th><th>Falta Excel</th><th>Total (R$)</th><th>%</th>
+        </tr>
+      </thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <hr style="margin:15px 0;">`;
+
+  // ==========================================================
+  // 📋 GERAR RELATÓRIO DETALHADO
+  // ==========================================================
+  const clone = resultado.cloneNode(true);
+  clone.querySelectorAll('button').forEach(e => e.remove()); // remove botões
+
+  // 🔧 Garante que todas as seções de agentes fiquem visíveis no PDF
+  clone.querySelectorAll('.agent-content').forEach(el => {
+    el.classList.add('show');
+    el.style.display = 'block';
+    el.style.opacity = '1';
+    el.style.maxHeight = 'none';
+  });
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = `
+    <style>
+      * {
+        font-family: 'Arial', sans-serif !important;
+        color: #111 !important;
+        background: #fff !important;
+        opacity: 1 !important;
+        box-shadow: none !important;
+      }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ccc; padding: 6px; }
+      th { background: #0a66c2; color: #fff; }
+      td { background: #fff; color: #111; }
+      .agent-card, .entry {
+        background: #fff !important;
+        border: 1px solid #ddd !important;
+      }
+      .agent-header {
+        background: #f3f6f9 !important;
+        border-bottom: 1px solid #ccc !important;
+        font-weight: bold !important;
+      }
+      .text-success { color: #0a6c2d !important; }
+      .text-warning { color: #b45309 !important; }
+      .text-danger { color: #a31515 !important; }
+      .text-primary { color: #0a66c2 !important; }
+      .fw-bold { font-weight: bold !important; }
+      .agent-card { margin-bottom: 8px !important; padding: 6px 10px !important; }
+      .entry { margin-bottom: 3px !important; padding: 4px 6px !important; }
+      .circle-inner { color:#0a66c2 !important; font-weight:bold; }
+    </style>
+
+    ${resumoHTML}
+
+    <div style="text-align:center; margin-bottom:8px;">
+      <h3 style="color:#0a66c2; margin:0;">📄 Detalhamento Completo</h3>
+    </div>
+
+    ${clone.outerHTML}
+
+    <div style="text-align:center; margin-top:10px; font-size:10px; color:#444;">
+      © ${new Date().getFullYear()} Conferência de Caixa — Desenvolvido por <strong>Gilmario Lima</strong>
+    </div>
+  `;
+
+  const optFinal = {
+    margin: [0.3, 0.3, 0.4, 0.3],
+    filename: nomeBase + '_Completo.pdf',
+    html2canvas: { scale: 1.1, useCORS: true, backgroundColor: '#ffffff' },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+
+  html2pdf().set(optFinal).from(wrapper).save();
 });
+
+
+
